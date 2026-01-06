@@ -7,6 +7,11 @@ import * as Yup from "yup";
 import { FiEye, FiEyeOff, FiLock, FiMail } from "react-icons/fi";
 import { useAuthStore } from "@/store/useAuthStore";
 import Link from "next/link";
+import api from "@/lib/api";
+import type { AxiosError } from "axios";
+import { useRouter } from "next/navigation";
+
+type FormStatus = { type: "success" | "error"; message: string } | undefined;
 
 const LoginSchema = Yup.object().shape({
   email: Yup.string().required("Email or username is required"),
@@ -15,20 +20,38 @@ const LoginSchema = Yup.object().shape({
 
 export function LoginForm() {
   const setSession = useAuthStore((state) => state.setSession);
-  const [status, setStatus] = useState<string | null>(null);
-
-  const handleSubmit = (values: { email: string; password: string }) => {
-    const email = values.email || "user@example.com";
-    setSession({
-      user: {
-        id: "user-1",
-        name: email.split("@")[0] || "User",
-        email,
-      },
-      token: "mock-token-login",
-    });
-
-    setStatus(`Signed in as ${email || "user"}`);
+  const router = useRouter();
+  const handleSubmit = async (
+    values: { email: string; password: string },
+    helpers: { setStatus: (status?: FormStatus) => void; setSubmitting: (submitting: boolean) => void },
+  ) => {
+    helpers.setStatus(undefined);
+    try {
+      const response = await api.post("/auth/login", {
+        email: values.email,
+        password: values.password,
+      });
+      const data = response.data || {};
+      setSession({
+        user: {
+          id: data?.user?.id ?? "user-1",
+          name: data?.user?.name ?? data?.user?.email ?? "User",
+          email: data?.user?.email ?? values.email,
+        },
+        token: data?.token ?? data?.accessToken ?? "",
+      });
+      helpers.setStatus({ type: "success", message: "Signed in successfully" });
+      router.push("/");
+    } catch (error: unknown) {
+      const axiosError = error as AxiosError<{ message?: string }>;
+      const message =
+        axiosError?.response?.data?.message ||
+        axiosError?.message ||
+        "Unable to sign in. Please check your credentials and try again.";
+      helpers.setStatus({ type: "error", message });
+    } finally {
+      helpers.setSubmitting(false);
+    }
   };
 
   return (
@@ -52,49 +75,60 @@ export function LoginForm() {
               onSubmit={handleSubmit}
               validateOnBlur
             >
-              <Form className="mt-8 space-y-4">
-                <FormInput
-                  label="Email or Username"
-                  name="email"
-                  type="email"
-                  placeholder="Enter your email or username"
-                  iconLeft={<FiMail />}
-                  autoComplete="email"
-                />
+              {({ isSubmitting, status }) => (
+                <Form className="mt-8 space-y-4">
+                  <FormInput
+                    label="Email or Username"
+                    name="email"
+                    type="email"
+                    placeholder="Enter your email or username"
+                    iconLeft={<FiMail />}
+                    autoComplete="email"
+                  />
 
-                <FormInput
-                  label="Password"
-                  name="password"
-                  type="password"
-                  placeholder="Enter your password"
-                  iconLeft={<FiLock />}
-                  iconRight={<FiEye />}
-                  autoComplete="current-password"
-                />
+                  <FormInput
+                    label="Password"
+                    name="password"
+                    type="password"
+                    placeholder="Enter your password"
+                    iconLeft={<FiLock />}
+                    iconRight={<FiEye />}
+                    autoComplete="current-password"
+                  />
 
-                <div className="flex items-center justify-between text-xs text-slate-300">
-                  <label className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      className="h-4 w-4 rounded border-slate-600 bg-[#0f1729] text-blue-500 focus:ring-2 focus:ring-blue-400"
-                      defaultChecked
-                    />
-                    <span>Remember me</span>
-                  </label>
-                  <button type="button" className="cursor-pointer font-medium text-blue-200 hover:text-blue-100">
-                    Forgot Password?
+                  <div className="flex items-center justify-between text-xs text-slate-300">
+                    <label className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 rounded border-slate-600 bg-[#0f1729] text-blue-500 focus:ring-2 focus:ring-blue-400"
+                        defaultChecked
+                      />
+                      <span>Remember me</span>
+                    </label>
+                    <button type="button" className="cursor-pointer font-medium text-blue-200 hover:text-blue-100">
+                      Forgot Password?
+                    </button>
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={isSubmitting}
+                    className="mt-2 flex w-full cursor-pointer items-center justify-center rounded-xl bg-gradient-to-r from-[#3b6df6] to-[#2a5be6] px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-900/50 transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-70"
+                  >
+                    {isSubmitting ? "Logging In..." : "Log In"}
                   </button>
-                </div>
 
-                <button
-                  type="submit"
-                  className="mt-2 flex w-full cursor-pointer items-center justify-center rounded-xl bg-linear-to-r from-[#3b6df6] to-[#2a5be6] px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-900/50 transition hover:brightness-110"
-                >
-                  Log In
-                </button>
-
-                {status && <p className="text-center text-xs text-emerald-300">{status}</p>}
-              </Form>
+                  {status && (
+                    <p
+                      className={`text-center text-xs font-medium ${
+                        status.type === "error" ? "text-amber-300" : "text-emerald-300"
+                      }`}
+                    >
+                      {status.message}
+                    </p>
+                  )}
+                </Form>
+              )}
             </Formik>
 
             <div className="mt-8 space-y-6 text-center text-sm text-slate-300">

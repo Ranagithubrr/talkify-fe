@@ -5,10 +5,15 @@ import { useState } from "react";
 import { Form, Formik, useField } from "formik";
 import * as Yup from "yup";
 import { FiEye, FiEyeOff, FiLock, FiMail, FiUser } from "react-icons/fi";
-import { useAuthStore } from "@/store/useAuthStore";
+import Link from "next/link";
+import api from "@/lib/api";
+import type { AxiosError } from "axios";
+import { useRouter } from "next/navigation";
+
+type FormStatus = { type: "success" | "error"; message: string } | undefined;
 
 const RegisterSchema = Yup.object().shape({
-  username: Yup.string().required("Username is required"),
+  name: Yup.string().required("Name is required"),
   email: Yup.string().email("Enter a valid email").required("Email is required"),
   password: Yup.string().min(8, "At least 8 characters").required("Password is required"),
   confirmPassword: Yup.string()
@@ -17,28 +22,36 @@ const RegisterSchema = Yup.object().shape({
 });
 
 export function RegisterForm() {
-  const setSession = useAuthStore((state) => state.setSession);
-  const [status, setStatus] = useState<string | null>(null);
+  const router = useRouter();
 
-  const handleSubmit = (values: {
-    username: string;
-    email: string;
-    password: string;
-    confirmPassword: string;
-  }) => {
-    const username = values.username;
-    const email = values.email;
-
-    setSession({
-      user: {
-        id: "user-2",
-        name: username,
-        username,
-        email,
-      },
-      token: "mock-token-register",
-    });
-    setStatus(`Account created for ${username}`);
+  const handleSubmit = async (
+    values: {
+      name: string;
+      email: string;
+      password: string;
+      confirmPassword: string;
+    },
+    helpers: { setStatus: (status?: FormStatus) => void; setSubmitting: (submitting: boolean) => void },
+  ) => {
+    helpers.setStatus(undefined);
+    try {
+      await api.post("/auth/register", {
+        name: values.name,
+        email: values.email,
+        password: values.password,
+      });
+      helpers.setStatus({ type: "success", message: "Account created successfully" });
+      router.push("/login");
+    } catch (error: unknown) {
+      const axiosError = error as AxiosError<{ message?: string }>;
+      const message =
+        axiosError?.response?.data?.message ||
+        axiosError?.message ||
+        "Unable to register. Please check your details and try again.";
+      helpers.setStatus({ type: "error", message });
+    } finally {
+      helpers.setSubmitting(false);
+    }
   };
 
   return (
@@ -59,69 +72,80 @@ export function RegisterForm() {
             </header>
 
             <Formik
-              initialValues={{ username: "", email: "", password: "", confirmPassword: "" }}
+              initialValues={{ name: "", email: "", password: "", confirmPassword: "" }}
               validationSchema={RegisterSchema}
               onSubmit={handleSubmit}
               validateOnBlur
             >
-              <Form className="mt-8 space-y-4">
-                <FormInput
-                  label="Username"
-                  name="username"
-                  type="text"
-                  placeholder="johndoe"
-                  iconLeft={<FiUser />}
-                  autoComplete="username"
-                />
+              {({ isSubmitting, status }) => (
+                <Form className="mt-8 space-y-4">
+                  <FormInput
+                    label="Name"
+                    name="name"
+                    type="text"
+                    placeholder="Alex Johnson"
+                    iconLeft={<FiUser />}
+                    autoComplete="name"
+                  />
 
-                <FormInput
-                  label="Email"
-                  name="email"
-                  type="email"
-                  placeholder="name@example.com"
-                  iconLeft={<FiMail />}
-                  autoComplete="email"
-                />
+                  <FormInput
+                    label="Email"
+                    name="email"
+                    type="email"
+                    placeholder="name@example.com"
+                    iconLeft={<FiMail />}
+                    autoComplete="email"
+                  />
 
-                <FormInput
-                  label="Password"
-                  name="password"
-                  type="password"
-                  placeholder="Enter your password"
-                  iconLeft={<FiLock />}
-                  iconRight={<FiEye />}
-                  autoComplete="new-password"
-                />
+                  <FormInput
+                    label="Password"
+                    name="password"
+                    type="password"
+                    placeholder="Enter your password"
+                    iconLeft={<FiLock />}
+                    iconRight={<FiEye />}
+                    autoComplete="new-password"
+                  />
 
-                <FormInput
-                  label="Confirm Password"
-                  name="confirmPassword"
-                  type="password"
-                  placeholder="••••••••"
-                  iconLeft={<FiLock />}
-                  iconRight={<FiEye />}
-                  autoComplete="new-password"
-                />
+                  <FormInput
+                    label="Confirm Password"
+                    name="confirmPassword"
+                    type="password"
+                    placeholder="••••••••"
+                    iconLeft={<FiLock />}
+                    iconRight={<FiEye />}
+                    autoComplete="new-password"
+                  />
 
-                <button
-                  type="submit"
-                  className="mt-2 flex w-full cursor-pointer items-center justify-center rounded-xl bg-linear-to-r from-[#3b6df6] to-[#2a5be6] px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-900/50 transition hover:brightness-110"
-                >
-                  Sign Up
-                </button>
+                  <button
+                    type="submit"
+                    disabled={isSubmitting}
+                    className="mt-2 flex w-full cursor-pointer items-center justify-center rounded-xl bg-gradient-to-r from-[#3b6df6] to-[#2a5be6] px-4 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-900/50 transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-70"
+                  >
+                    {isSubmitting ? "Creating Account..." : "Sign Up"}
+                  </button>
 
-                <Divider label="OR CONTINUE WITH" />
+                  <Divider label="OR CONTINUE WITH" />
 
-                {status && <p className="text-center text-xs text-emerald-300">{status}</p>}
-              </Form>
+                  {status && (
+                    <p
+                      className={`text-center text-xs font-medium ${
+                        status.type === "error" ? "text-amber-300" : "text-emerald-300"
+                      }`}
+                    >
+                      {status.message}
+                    </p>
+                  )}
+                </Form>
+              )}
             </Formik>
 
             <div className="mt-8 space-y-6 text-center text-sm text-slate-300">
               <p>
                 Already have an account?{" "}
-                <a className="font-semibold text-blue-200 hover:text-blue-100" href="/login">
+                <Link className="font-semibold text-blue-200 hover:text-blue-100" href="/login">
                   Log in
-                </a>
+                </Link>
               </p>
               <p className="text-[11px] text-slate-500">© 2024 Talkify. All rights reserved.</p>
             </div>
