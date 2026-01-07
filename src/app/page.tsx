@@ -7,15 +7,15 @@ import { FiLogOut } from "react-icons/fi";
 
 export default function HomePage() {
   const router = useRouter();
-  const { isAuthenticated, user } = useAuthStore();
+  const { isAuthenticated, user, hasHydrated } = useAuthStore();
 
   useEffect(() => {
-    if (!isAuthenticated) {
+    if (hasHydrated && !isAuthenticated) {
       router.replace("/login");
     }
-  }, [isAuthenticated, router]);
+  }, [hasHydrated, isAuthenticated, router]);
 
-  if (!isAuthenticated) {
+  if (!hasHydrated || !isAuthenticated) {
     return <main className="min-h-screen bg-[#0a1221]" />;
   }
 

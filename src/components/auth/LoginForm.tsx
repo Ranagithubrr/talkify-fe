@@ -37,8 +37,11 @@ export function LoginForm() {
           id: data?.user?.id ?? "user-1",
           name: data?.user?.name ?? data?.user?.email ?? "User",
           email: data?.user?.email ?? values.email,
+          photo: data?.user?.photo ?? null,
+          createdAt: data?.user?.createdAt,
         },
-        token: data?.token ?? data?.accessToken ?? "",
+        accessToken: data?.tokens?.accessToken ?? "",
+        refreshToken: data?.tokens?.refreshToken ?? "",
       });
       helpers.setStatus({ type: "success", message: "Signed in successfully" });
       router.push("/");
