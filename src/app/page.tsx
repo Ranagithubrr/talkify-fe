@@ -24,7 +24,11 @@ export default function HomePage() {
 
   return (
     <main className="relative min-h-screen bg-[#0b1222] text-white">
-      <Sidebar userName={user?.name || user?.email || "You"} onOpenFindFriend={() => setIsFindFriendOpen(true)} />
+      <Sidebar
+        userId={user?.id}
+        userName={user?.name || user?.email || "You"}
+        onOpenFindFriend={() => setIsFindFriendOpen(true)}
+      />
       <div className="ml-[320px] min-h-screen">
         <ChatArea />
       </div>

@@ -1,6 +1,8 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { Avatar } from "@/components/chat/Avatar";
+import api from "@/lib/api";
 
 type ChatItem = {
   name: string;
@@ -11,16 +13,82 @@ type ChatItem = {
   status?: "online" | "offline";
 };
 
-const chats: ChatItem[] = [
-  { name: "Frontend Team", preview: "Alice: Can you check the PR?", time: "10:20 AM", active: true, status: "online" },
-  { name: "John Doe", preview: "See you tomorrow at 10.", time: "Yesterday" },
-  { name: "Project Alpha", preview: "Update the launch details delayed.", time: "Mon" },
-  { name: "Sarah Smith", preview: "Sounds good", time: "Mon" },
-  { name: "Design Team", preview: "New files were uploaded.", time: "Last week" },
-  { name: "David Chen", preview: "Are we still meeting?", time: "2 weeks ago" },
-];
+type ConversationResponse = {
+  conversations: Array<{
+    _id: string;
+    lastMessage?: {
+      content?: string;
+      sentAt?: string;
+    };
+    lastMessageAt?: string;
+    receiver?: {
+      id: string;
+      name: string;
+      email?: string;
+      photo?: string | null;
+    };
+    receiverName?: string;
+  }>;
+};
 
-export function Sidebar({ userName, onOpenFindFriend }: { userName: string; onOpenFindFriend: () => void }) {
+export function Sidebar({
+  userId,
+  userName,
+  onOpenFindFriend,
+}: {
+  userId?: string;
+  userName: string;
+  onOpenFindFriend: () => void;
+}) {
+  const [chats, setChats] = useState<ChatItem[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    if (!userId) {
+      setChats([]);
+      return;
+    }
+
+    let isMounted = true;
+    const fetchConversations = async () => {
+      setIsLoading(true);
+      try {
+        const response = await api.get<ConversationResponse>("/conversations", {
+          params: { userId },
+        });
+        const items =
+          response.data?.conversations?.map((conversation, index) => {
+            const receiverName =
+              conversation.receiverName || conversation.receiver?.name || "Unknown";
+            const messageTime = conversation.lastMessageAt || conversation.lastMessage?.sentAt;
+            return {
+              name: receiverName,
+              preview: conversation.lastMessage?.content || "No messages yet",
+              time: messageTime ? new Date(messageTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "",
+              active: index === 0,
+            };
+          }) ?? [];
+        if (isMounted) {
+          setChats(items);
+        }
+      } catch {
+        if (isMounted) {
+          setChats([]);
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    fetchConversations();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [userId]);
+
   return (
     <aside className="fixed left-0 top-0 bottom-0 z-10 flex w-[320px] flex-col border-r border-white/5 bg-[#0c1628]">
       <div className="flex items-center gap-3 px-4 py-4">
@@ -51,8 +119,12 @@ export function Sidebar({ userName, onOpenFindFriend }: { userName: string; onOp
       </div>
 
       <div className="flex-1 space-y-1 overflow-y-auto px-2 pb-4">
+        {isLoading && <p className="px-3 text-xs text-slate-400">Loading conversations...</p>}
+        {!isLoading && chats.length === 0 && (
+          <p className="px-3 text-xs text-slate-400">No conversations yet.</p>
+        )}
         {chats.map((chat) => (
-          <ChatListItem key={chat.name} chat={chat} />
+          <ChatListItem key={`${chat.name}-${chat.time}`} chat={chat} />
         ))}
       </div>
 
