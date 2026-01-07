@@ -21,10 +21,17 @@ type UsersResponse = {
   }>;
 };
 
-export function FindFriendModal({ onClose }: { onClose: () => void }) {
+export function FindFriendModal({
+  onClose,
+  onSuccess,
+}: {
+  onClose: () => void;
+  onSuccess: () => void;
+}) {
   const currentUserId = useAuthStore((state) => state.user?.id);
   const [friends, setFriends] = useState<Friend[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [activeUserId, setActiveUserId] = useState<string | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -61,6 +68,23 @@ export function FindFriendModal({ onClose }: { onClose: () => void }) {
       isMounted = false;
     };
   }, [currentUserId]);
+
+  const handleMessage = async (friendId: string) => {
+    if (!currentUserId) {
+      return;
+    }
+    setActiveUserId(friendId);
+    try {
+      await api.post("/conversations", {
+        memberA: currentUserId,
+        memberB: friendId,
+      });
+      onSuccess();
+      onClose();
+    } finally {
+      setActiveUserId(null);
+    }
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
@@ -103,9 +127,11 @@ export function FindFriendModal({ onClose }: { onClose: () => void }) {
               </div>
               <button
                 type="button"
-                className="cursor-pointer rounded-full bg-gradient-to-r from-[#3b6df6] to-[#2a5be6] px-4 py-2 text-xs font-semibold text-white shadow-lg shadow-blue-900/40 transition hover:brightness-110"
+                onClick={() => handleMessage(friend.id)}
+                disabled={activeUserId === friend.id}
+                className="cursor-pointer rounded-full bg-gradient-to-r from-[#3b6df6] to-[#2a5be6] px-4 py-2 text-xs font-semibold text-white shadow-lg shadow-blue-900/40 transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-70"
               >
-                Message
+                {activeUserId === friend.id ? "Sending..." : "Message"}
               </button>
             </div>
           ))}

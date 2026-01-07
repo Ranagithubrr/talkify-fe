@@ -1,48 +1,198 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { FiLogOut } from "react-icons/fi";
+import { LuSend } from "react-icons/lu";
 import { useAuthStore } from "@/store/useAuthStore";
 import { Avatar } from "@/components/chat/Avatar";
+import api from "@/lib/api";
+import { io, type Socket } from "socket.io-client";
 
 type Message = {
-  id: number;
-  from: "me" | "alice" | "bob";
-  name: string;
-  text: string;
-  time: string;
-  attached?: boolean;
+  id: string;
+  sender: string;
+  recipient: string;
+  content: string;
+  sentAt: string;
 };
 
-const messages: Message[] = [
-  {
-    id: 1,
-    from: "alice",
-    name: "Alice",
-    text: "Hey team! I just pushed the latest changes to the staging branch. Can someone please review the PR when they have a moment?",
-    time: "10:15 AM",
-  },
-  { id: 2, from: "bob", name: "Bob", text: "I'm on it. Taking a look now.", time: "10:18 AM" },
-  {
-    id: 3,
-    from: "me",
-    name: "You",
-    text: "Thanks Bob! Also, here is the updated design spec for the login page we discussed yesterday.",
-    time: "10:22 AM",
-    attached: true,
-  },
-  { id: 4, from: "alice", name: "Alice", text: "Perfect, received it! I'll incorporate these changes into the next sprint.", time: "10:30 AM" },
-];
+type MessagesResponse = {
+  messages: Array<Message & { _id?: string }>;
+};
 
-export function ChatArea() {
+export function ChatArea({
+  currentUserId,
+  activeChat,
+}: {
+  currentUserId?: string;
+  activeChat?: { id: string; name: string } | null;
+}) {
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [isSending, setIsSending] = useState(false);
+  const socketRef = useRef<Socket | null>(null);
+  const activeChatRef = useRef(activeChat);
+
+  useEffect(() => {
+    activeChatRef.current = activeChat;
+  }, [activeChat]);
+
+  useEffect(() => {
+    if (!currentUserId) {
+      return;
+    }
+
+    const socket = io("http://localhost:5000");
+    socketRef.current = socket;
+
+    const handleIncoming = (payload: Message & { _id?: string }) => {
+      const active = activeChatRef.current;
+      if (!active) {
+        return;
+      }
+      const sender = payload.sender;
+      const recipient = payload.recipient;
+      const isRelevant =
+        (sender === active.id && recipient === currentUserId) ||
+        (sender === currentUserId && recipient === active.id);
+      if (!isRelevant) {
+        return;
+      }
+      setMessages((prev) => {
+        const withoutPending = prev.filter((message) => {
+          const isPending = message.id.startsWith("temp-");
+          if (!isPending) {
+            return true;
+          }
+          return !(
+            message.sender === payload.sender &&
+            message.recipient === payload.recipient &&
+            message.content === payload.content
+          );
+        });
+        return [
+          ...withoutPending,
+          {
+            id: payload.id || payload._id || `${Date.now()}`,
+            sender: payload.sender,
+            recipient: payload.recipient,
+            content: payload.content,
+            sentAt: payload.sentAt,
+          },
+        ];
+      });
+    };
+
+    socket.on("message:new", handleIncoming);
+
+    return () => {
+      socket.off("message:new", handleIncoming);
+      socket.disconnect();
+    };
+  }, [currentUserId]);
+
+  useEffect(() => {
+    if (!currentUserId || !activeChat?.id) {
+      setMessages([]);
+      return;
+    }
+
+    let isMounted = true;
+    const fetchMessages = async () => {
+      setIsLoading(true);
+      try {
+        const response = await api.get<MessagesResponse>("/messages", {
+          params: { userA: currentUserId, userB: activeChat.id },
+        });
+        if (isMounted) {
+          const items =
+            response.data?.messages?.map((message) => ({
+              id: message.id || message._id || "",
+              sender: message.sender,
+              recipient: message.recipient,
+              content: message.content,
+              sentAt: message.sentAt,
+            })) ?? [];
+          setMessages(items);
+        }
+      } catch {
+        if (isMounted) {
+          setMessages([]);
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    fetchMessages();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [currentUserId, activeChat?.id]);
+
+  const handleSend = async () => {
+    if (!currentUserId || !activeChat?.id || !draft.trim()) {
+      return;
+    }
+    const content = draft.trim();
+    const optimisticMessage: Message = {
+      id: `temp-${Date.now()}`,
+      sender: currentUserId,
+      recipient: activeChat.id,
+      content,
+      sentAt: new Date().toISOString(),
+    };
+    setMessages((prev) => [...prev, optimisticMessage]);
+    setDraft("");
+    setIsSending(true);
+    try {
+      const socket = socketRef.current;
+      if (socket?.connected) {
+        socket.emit("message:send", {
+          senderId: currentUserId,
+          recipientId: activeChat.id,
+          content,
+        });
+      } else {
+        const response = await api.post<{ message?: Message & { _id?: string } }>("/messages", {
+          senderId: currentUserId,
+          recipientId: activeChat.id,
+          content,
+        });
+        const newMessage = response.data?.message;
+        if (newMessage) {
+          setMessages((prev) => {
+            const withoutPending = prev.filter((message) => message.id !== optimisticMessage.id);
+            return [
+              ...withoutPending,
+              {
+                id: newMessage.id || newMessage._id || `${Date.now()}`,
+                sender: newMessage.sender,
+                recipient: newMessage.recipient,
+                content: newMessage.content,
+                sentAt: newMessage.sentAt,
+              },
+            ];
+          });
+        }
+      }
+    } finally {
+      setIsSending(false);
+    }
+  };
   return (
     <section className="relative min-h-screen bg-[#0f172a]">
       <div className="sticky top-0 z-10 flex items-center justify-between border-b border-white/5 bg-[#101b30] px-6 py-4">
         <div className="flex items-center gap-3">
-          <Avatar name="Frontend Team" />
+          <Avatar name={activeChat?.name || "Messages"} />
           <div>
-            <p className="text-lg font-semibold text-white">Frontend Team</p>
-            <p className="text-xs text-slate-400">3 members, 1 online</p>
+            <p className="text-lg font-semibold text-white">{activeChat?.name || "Select a conversation"}</p>
+            <p className="text-xs text-slate-400">{activeChat ? "1:1 conversation" : "Pick someone to start chatting"}</p>
           </div>
           <span className="ml-3 rounded-full bg-[#15223c] px-3 py-1 text-xs text-slate-300">Today</span>
         </div>
@@ -52,43 +202,72 @@ export function ChatArea() {
       </div>
 
       <div className="flex-1 overflow-y-auto px-6 py-6 pb-32">
+        {!activeChat && <p className="text-sm text-slate-400">Select a conversation to see messages.</p>}
+        {activeChat && isLoading && <p className="text-sm text-slate-400">Loading messages...</p>}
+        {activeChat && !isLoading && messages.length === 0 && (
+          <p className="text-sm text-slate-400">No messages yet. Say hello 👋</p>
+        )}
         {messages.map((message) => (
-          <MessageBubble key={message.id} message={message} />
+          <MessageBubble
+            key={message.id}
+            message={message}
+            currentUserId={currentUserId}
+            friendName={activeChat?.name}
+          />
         ))}
       </div>
 
       <div className="sticky bottom-0 border-t border-white/5 bg-[#101b30] px-6 py-4">
         <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-[#0f172a] px-4 py-3">
-          <span className="text-xl">➕</span>
           <input
             placeholder="Type a message..."
-            className="w-full bg-transparent text-white placeholder:text-slate-500 focus:outline-none"
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !event.shiftKey) {
+                event.preventDefault();
+                handleSend();
+              }
+            }}
+            disabled={!activeChat || isSending}
+            className="w-full bg-transparent text-white placeholder:text-slate-500 focus:outline-none disabled:opacity-60"
           />
-          <div className="flex items-center gap-2 text-slate-300">
-            <span className="cursor-pointer text-lg hover:text-white">😊</span>
-            <span className="cursor-pointer text-lg hover:text-white">📎</span>
-            <span className="cursor-pointer text-lg hover:text-white">📷</span>
-            <span className="cursor-pointer text-lg hover:text-white">📩</span>
-          </div>
+          <button
+            type="button"
+            onClick={handleSend}
+            disabled={!activeChat || isSending || !draft.trim()}
+            className="cursor-pointer text-lg text-sky-400 hover:text-sky-300 disabled:cursor-not-allowed disabled:opacity-60"
+            aria-label="Send message"
+          >
+            <LuSend />
+          </button>
         </div>
       </div>
     </section>
   );
 }
 
-function MessageBubble({ message }: { message: Message }) {
-  const isMe = message.from === "me";
+function MessageBubble({
+  message,
+  currentUserId,
+  friendName,
+}: {
+  message: Message;
+  currentUserId?: string;
+  friendName?: string;
+}) {
+  const isMe = Boolean(currentUserId && message.sender === currentUserId);
   return (
     <div className={`mb-6 flex ${isMe ? "justify-end" : "justify-start"}`}>
       {!isMe && (
         <div className="mr-3">
-          <Avatar name={message.name} />
+          <Avatar name={friendName || "Friend"} />
         </div>
       )}
       <div className={`max-w-xl space-y-1 ${isMe ? "text-right" : "text-left"}`}>
         <div className="flex items-center gap-2 text-xs text-slate-400">
-          {!isMe && <span className="font-semibold text-white">{message.name}</span>}
-          <span>{message.time}</span>
+          {!isMe && <span className="font-semibold text-white">{friendName || "Friend"}</span>}
+          <span>{new Date(message.sentAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
           {isMe && <span className="font-semibold text-white">You</span>}
         </div>
         <div
@@ -96,13 +275,8 @@ function MessageBubble({ message }: { message: Message }) {
             isMe ? "bg-[#1b4de2] text-white" : "bg-[#111c33] text-slate-200"
           }`}
         >
-          {message.text}
+          {message.content}
         </div>
-        {message.attached && (
-          <div className="flex justify-end">
-            <div className="h-28 w-24 rounded-xl border border-white/10 bg-white/80" />
-          </div>
-        )}
       </div>
     </div>
   );

@@ -5,11 +5,11 @@ import { Avatar } from "@/components/chat/Avatar";
 import api from "@/lib/api";
 
 type ChatItem = {
+  id: string;
   name: string;
   preview: string;
   time: string;
   unread?: boolean;
-  active?: boolean;
   status?: "online" | "offline";
 };
 
@@ -35,10 +35,16 @@ export function Sidebar({
   userId,
   userName,
   onOpenFindFriend,
+  refreshKey = 0,
+  onSelectChat,
+  activeChatId,
 }: {
   userId?: string;
   userName: string;
   onOpenFindFriend: () => void;
+  refreshKey?: number;
+  onSelectChat: (chat: { id: string; name: string }) => void;
+  activeChatId?: string | null;
 }) {
   const [chats, setChats] = useState<ChatItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -57,15 +63,16 @@ export function Sidebar({
           params: { userId },
         });
         const items =
-          response.data?.conversations?.map((conversation, index) => {
+          response.data?.conversations?.map((conversation) => {
             const receiverName =
               conversation.receiverName || conversation.receiver?.name || "Unknown";
+            const receiverId = conversation.receiver?.id || conversation._id;
             const messageTime = conversation.lastMessageAt || conversation.lastMessage?.sentAt;
             return {
+              id: receiverId,
               name: receiverName,
               preview: conversation.lastMessage?.content || "No messages yet",
               time: messageTime ? new Date(messageTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "",
-              active: index === 0,
             };
           }) ?? [];
         if (isMounted) {
@@ -87,7 +94,7 @@ export function Sidebar({
     return () => {
       isMounted = false;
     };
-  }, [userId]);
+  }, [userId, refreshKey]);
 
   return (
     <aside className="fixed left-0 top-0 bottom-0 z-10 flex w-[320px] flex-col border-r border-white/5 bg-[#0c1628]">
@@ -124,7 +131,12 @@ export function Sidebar({
           <p className="px-3 text-xs text-slate-400">No conversations yet.</p>
         )}
         {chats.map((chat) => (
-          <ChatListItem key={`${chat.name}-${chat.time}`} chat={chat} />
+          <ChatListItem
+            key={`${chat.id}-${chat.time}`}
+            chat={chat}
+            isActive={chat.id === activeChatId}
+            onSelect={() => onSelectChat({ id: chat.id, name: chat.name })}
+          />
         ))}
       </div>
 
@@ -157,11 +169,20 @@ function Tag({ label, active }: { label: string; active?: boolean }) {
   );
 }
 
-function ChatListItem({ chat }: { chat: ChatItem }) {
+function ChatListItem({
+  chat,
+  isActive,
+  onSelect,
+}: {
+  chat: ChatItem;
+  isActive: boolean;
+  onSelect: () => void;
+}) {
   return (
     <div
+      onClick={onSelect}
       className={`group flex cursor-pointer items-center gap-3 rounded-2xl px-3 py-3 transition ${
-        chat.active ? "bg-[#17223a]" : "hover:bg-[#111c33]"
+        isActive ? "bg-[#17223a]" : "hover:bg-[#111c33]"
       }`}
     >
       <div className="relative">

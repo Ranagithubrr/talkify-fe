@@ -11,6 +11,12 @@ export default function HomePage() {
   const router = useRouter();
   const { isAuthenticated, user, hasHydrated } = useAuthStore();
   const [isFindFriendOpen, setIsFindFriendOpen] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [activeChat, setActiveChat] = useState<{ id: string; name: string } | null>(null);
+
+  const handleConversationCreated = () => {
+    setRefreshKey((prev) => prev + 1);
+  };
 
   useEffect(() => {
     if (hasHydrated && !isAuthenticated) {
@@ -28,11 +34,19 @@ export default function HomePage() {
         userId={user?.id}
         userName={user?.name || user?.email || "You"}
         onOpenFindFriend={() => setIsFindFriendOpen(true)}
+        refreshKey={refreshKey}
+        onSelectChat={setActiveChat}
+        activeChatId={activeChat?.id}
       />
       <div className="ml-[320px] min-h-screen">
-        <ChatArea />
+        <ChatArea currentUserId={user?.id} activeChat={activeChat} />
       </div>
-      {isFindFriendOpen && <FindFriendModal onClose={() => setIsFindFriendOpen(false)} />}
+      {isFindFriendOpen && (
+        <FindFriendModal
+          onClose={() => setIsFindFriendOpen(false)}
+          onSuccess={handleConversationCreated}
+        />
+      )}
     </main>
   );
 }
