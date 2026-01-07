@@ -34,26 +34,38 @@ export function ChatArea({
   const [isSending, setIsSending] = useState(false);
   const socketRef = useRef<Socket | null>(null);
   const activeChatRef = useRef(activeChat);
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     activeChatRef.current = activeChat;
   }, [activeChat]);
 
   useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  useEffect(() => {
     if (!currentUserId) {
       return;
     }
 
-    const socket = io("http://localhost:5000");
+    const socket = io("http://localhost:5000", {
+      query: { userId: currentUserId },
+    });
     socketRef.current = socket;
 
-    const handleIncoming = (payload: Message & { _id?: string }) => {
+    const handleIncoming = (
+      payload: (Message & { _id?: string }) & { senderId?: string; recipientId?: string },
+    ) => {
       const active = activeChatRef.current;
       if (!active) {
         return;
       }
-      const sender = payload.sender;
-      const recipient = payload.recipient;
+      const sender = payload.sender || payload.senderId;
+      const recipient = payload.recipient || payload.recipientId;
+      if (!sender || !recipient) {
+        return;
+      }
       const isRelevant =
         (sender === active.id && recipient === currentUserId) ||
         (sender === currentUserId && recipient === active.id);
@@ -67,8 +79,8 @@ export function ChatArea({
             return true;
           }
           return !(
-            message.sender === payload.sender &&
-            message.recipient === payload.recipient &&
+            message.sender === sender &&
+            message.recipient === recipient &&
             message.content === payload.content
           );
         });
@@ -76,10 +88,10 @@ export function ChatArea({
           ...withoutPending,
           {
             id: payload.id || payload._id || `${Date.now()}`,
-            sender: payload.sender,
-            recipient: payload.recipient,
+            sender,
+            recipient,
             content: payload.content,
-            sentAt: payload.sentAt,
+            sentAt: payload.sentAt || new Date().toISOString(),
           },
         ];
       });
@@ -201,11 +213,26 @@ export function ChatArea({
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-6 py-6 pb-32">
-        {!activeChat && <p className="text-sm text-slate-400">Select a conversation to see messages.</p>}
+      <div className="flex-1 overflow-y-auto px-6 py-6">
+        {!activeChat && (
+          <div className="flex min-h-[60vh] items-center justify-center">
+            <div className="rounded-3xl border border-white/10 bg-[#111c33]/80 px-8 py-10 text-center shadow-2xl shadow-black/30">
+              <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-sky-500/80 to-indigo-500/80 text-2xl">
+                💬
+              </div>
+              <h2 className="text-lg font-semibold text-white">Select a conversation</h2>
+              <p className="mt-2 text-sm text-slate-400">Choose a chat from the sidebar to see messages.</p>
+            </div>
+          </div>
+        )}
         {activeChat && isLoading && <p className="text-sm text-slate-400">Loading messages...</p>}
         {activeChat && !isLoading && messages.length === 0 && (
-          <p className="text-sm text-slate-400">No messages yet. Say hello 👋</p>
+          <div className="flex min-h-[40vh] items-center justify-center">
+            <div className="rounded-2xl border border-white/10 bg-[#111c33]/70 px-6 py-6 text-center">
+              <p className="text-sm font-semibold text-white">No messages yet</p>
+              <p className="mt-1 text-xs text-slate-400">Start the conversation with a quick hello.</p>
+            </div>
+          </div>
         )}
         {messages.map((message) => (
           <MessageBubble
@@ -215,12 +242,13 @@ export function ChatArea({
             friendName={activeChat?.name}
           />
         ))}
+        <div ref={messagesEndRef} />
       </div>
 
       <div className="sticky bottom-0 border-t border-white/5 bg-[#101b30] px-6 py-4">
-        <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-[#0f172a] px-4 py-3">
+        <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-[#0f172a] px-4 py-2.5">
           <input
-            placeholder="Type a message..."
+            placeholder={activeChat ? "Type a message..." : "Select a conversation to start chatting"}
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
             onKeyDown={(event) => {
