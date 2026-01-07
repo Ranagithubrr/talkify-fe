@@ -55,8 +55,8 @@ function Sidebar({ userName }: { userName: string }) {
           T
         </div>
         <p className="text-lg font-semibold">Chats</p>
-        <button className="ml-auto rounded-full bg-gradient-to-r from-indigo-500 to-blue-500 px-3 py-1.5 text-xs font-semibold text-white shadow-lg shadow-indigo-900/40 transition hover:brightness-110">
-          Add Friend
+        <button className="ml-auto rounded-full cursor-pointer bg-linear-to-r from-indigo-500 to-blue-500 px-3 py-1.5 text-xs font-semibold text-white shadow-lg shadow-indigo-900/40 transition hover:brightness-110">
+          Find Friend
         </button>
       </div>
 
